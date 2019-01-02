@@ -19,6 +19,7 @@ import com.diamond.SmartVoice.Controllers.URoom;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.TreeMap;
 
 /**
  * @author Dmitriy Ponomarev
@@ -38,18 +39,17 @@ public class DevicesActivity extends PreferenceActivity {
 
     private void reload() {
         getPreferenceScreen().removeAll();
-        if (mainActivity.HomeyController != null) list("Homey", mainActivity.HomeyController);
-        if (mainActivity.FibaroController != null) list("Fibaro", mainActivity.FibaroController);
-        if (mainActivity.VeraController != null) list("Vera", mainActivity.VeraController);
-        if (mainActivity.ZipatoController != null) list("Zipato", mainActivity.ZipatoController);
+        for (Controller controller : MainActivity.controllers)
+            if(controller.getVisibleDevicesCount() > 0)
+                list(controller);
     }
 
-    private void list(String controllerName, Controller controller) {
+    private void list(Controller controller) {
         PreferenceScreen deviceList = getPreferenceScreen();
         Context context = deviceList.getContext();
 
         PreferenceCategory controllerCat = new PreferenceCategory(context);
-        controllerCat.setTitle(controllerName);
+        controllerCat.setTitle(controller.getName());
         deviceList.addPreference(controllerCat);
 
         if (controller.getVisibleRoomsCount() > 0 && controller.getVisibleDevicesCount() > 0) {
@@ -59,12 +59,16 @@ public class DevicesActivity extends PreferenceActivity {
                     room.setTitle(r.getName());
                     deviceList.addPreference(room);
 
+                    TreeMap<String, UDevice> tree = new TreeMap<String, UDevice>();
                     for (UDevice d : controller.getDevices())
-                        if (d.ai_name != null && d.getRoomName() != null && d.getRoomName().equalsIgnoreCase(r.getName()) && d.isVisible()) {
+                        tree.put(d.getName(), d);
+
+                    for (UDevice d : tree.values())
+                        if (d.getAiName() != null && d.getRoomName() != null && d.getRoomName().equalsIgnoreCase(r.getName()) && d.isVisible()) {
 
                             PreferenceScreen device = getPreferenceManager().createPreferenceScreen(context);
                             device.setTitle(d.getName());
-                            device.setSummary(d.ai_name);
+                            device.setSummary(d.getAiName());
                             room.addPreference(device);
 
                             Preference pref = new CheckBoxPreference(context);
@@ -74,8 +78,14 @@ public class DevicesActivity extends PreferenceActivity {
                             device.addPreference(pref);
 
                             pref = new Preference(context);
+                            pref.setTitle(getString(R.string.ActivateDevice));
+                            pref.setSummary(d.getAiName());
+                            pref.setOnPreferenceClickListener(activateListener);
+                            device.addPreference(pref);
+
+                            pref = new Preference(context);
                             pref.setTitle(getString(R.string.VoiceCommand));
-                            pref.setSummary(d.ai_name);
+                            pref.setSummary(d.getAiName());
                             device.addPreference(pref);
 
                             pref = new EditTextPreference(context);
@@ -89,7 +99,7 @@ public class DevicesActivity extends PreferenceActivity {
                             device.addPreference(pref);
 
                             pref = new Preference(context);
-                            pref.setTitle(getString(R.string.OriginalName));
+                            pref.setTitle(getString(R.string.DeviceName));
                             pref.setSummary(d.getName());
                             device.addPreference(pref);
 
@@ -109,12 +119,6 @@ public class DevicesActivity extends PreferenceActivity {
                                 pref.setSummary(entry.getValue());
                                 device.addPreference(pref);
                             }
-
-                            pref = new Preference(context);
-                            pref.setTitle(getString(R.string.ActivateDevice));
-                            pref.setSummary(d.ai_name);
-                            pref.setOnPreferenceClickListener(activateListener);
-                            device.addPreference(pref);
                         }
                 }
         }
@@ -150,7 +154,7 @@ public class DevicesActivity extends PreferenceActivity {
                 public void run() {
                     reload();
                 }
-            }, 500);
+            }, 1000);
             return true;
         }
     };

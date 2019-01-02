@@ -1,23 +1,17 @@
 package com.diamond.SmartVoice.Controllers;
 
 import android.content.SharedPreferences;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import com.diamond.SmartVoice.AI;
 import com.diamond.SmartVoice.MainActivity;
 import com.diamond.SmartVoice.R;
-import com.google.gson.Gson;
-import com.rollbar.android.Rollbar;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.NoRouteToHostException;
-import java.net.SocketTimeoutException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+
 
 /**
  * @author Dmitriy Ponomarev
@@ -27,140 +21,68 @@ public abstract class Controller {
 
     protected MainActivity mainActivity;
 
-    protected Gson gson;
+    protected String name;
     protected String host;
     protected String host_ext;
     protected String auth;
-    protected String bearer;
     protected boolean clearNames;
 
-    protected String request(String request, String cookie) {
-        String result = null;
-        try {
-            URL url = host_ext != null ? new URL("https://" + host_ext + request) : new URL("http://" + host + request);
-            Log.d(TAG, "Sending request: " + url);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            if (auth != null)
-                conn.setRequestProperty("Authorization", "Basic " + auth);
-            else if (bearer != null)
-                conn.setRequestProperty("Authorization", "Bearer " + bearer);
-            conn.setRequestProperty("Content-Type", "application/json;charset=utf-8");
-            if (cookie != null)
-                conn.setRequestProperty("Cookie", cookie);
-            conn.setConnectTimeout(10000);
-            conn.connect();
-            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder buffer = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null)
-                buffer.append(line).append("\n");
-            br.close();
-            result = buffer.toString();
-            conn.disconnect();
-        } catch (SocketTimeoutException e) {
-            e.printStackTrace();
-        } catch (NoRouteToHostException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            Log.w(TAG, "Error while send request: " + request);
-            e.printStackTrace();
-            Rollbar.instance().error(e);
+    public String getHost() {
+        String address = mainActivity.wifi() ? host : host_ext;
+        if (address == null || address.isEmpty())
+            address = host_ext;
+        if (address == null || address.isEmpty())
+            address = host;
+        if (address == null || address.isEmpty())
+            return "";
+        if(this instanceof HttpController) {
+            if (!address.contains("http:") && !address.contains("https:"))
+                address = "http://" + address;
         }
-        return result;
+        else if(this instanceof MQTTController) {
+            address = address.replace("http:", "tcp:");
+            address = address.replace("https:", "ssl:");
+            if (!address.contains("tcp:") && !address.contains("ssl:"))
+                address = "tcp://" + address;
+        }
+        return address;
     }
 
-    protected void sendCommand(final String request)
-    {
-        sendCommand(request, null);
+    URL getURL(String request) throws MalformedURLException {
+        String address = getHost();
+        if (address.isEmpty())
+            throw new MalformedURLException("no host");
+        return new URL(address + request);
     }
 
-    protected void sendCommand(final String request, final String cookie) {
-        Log.w(TAG, "Command: " + request);
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    URL url = host_ext != null ? new URL("https://" + host_ext + request) : new URL("http://" + host + request);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    if (auth != null)
-                        conn.setRequestProperty("Authorization", "Basic " + auth);
-                    else if (bearer != null)
-                        conn.setRequestProperty("Authorization", "Bearer " + bearer);
-                    if (cookie != null)
-                        conn.setRequestProperty("Cookie", cookie);
-                    conn.setConnectTimeout(10000);
-                    conn.getResponseMessage();
-                } catch (SocketTimeoutException e) {
-                    e.printStackTrace();
-                } catch (NoRouteToHostException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    Log.w(TAG, "Error while get getJson: " + request);
-                    e.printStackTrace();
-                    Rollbar.instance().error(e);
-                }
-            }
-        }).start();
-    }
+    public abstract void onSharedPreferenceChanged(SharedPreferences pref, String key);
 
-    protected void sendJSON(final String request, final String json)
-    {
-        sendJSON(request, json, null);
-    }
+    public abstract void loadData();
 
-    protected void sendJSON(final String request, final String json, final String cookie) {
-        Log.w(TAG, "Json: " + json);
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    URL url = host_ext != null ? new URL("https://" + host_ext + request) : new URL("http://" + host + request);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(10000);
-                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                    if (cookie != null)
-                        conn.setRequestProperty("Cookie", cookie);
-                    conn.setDoOutput(true);
-                    conn.setDoInput(true);
-                    conn.setRequestMethod("PUT");
-                    if (auth != null)
-                        conn.setRequestProperty("Authorization", "Basic " + auth);
-                    else if (bearer != null)
-                        conn.setRequestProperty("Authorization", "Bearer " + bearer);
-                    OutputStream os = conn.getOutputStream();
-                    os.write(json.getBytes("UTF-8"));
-                    os.close();
-
-                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    StringBuilder buffer = new StringBuilder();
-                    String line;
-                    while ((line = br.readLine()) != null)
-                        buffer.append(line).append("\n");
-                    br.close();
-
-                    Log.w(TAG, "Result: " + buffer.toString());
-
-                    conn.disconnect();
-                } catch (SocketTimeoutException e) {
-                    e.printStackTrace();
-                } catch (NoRouteToHostException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    Log.w(TAG, "Error while get getJson: " + request);
-                    e.printStackTrace();
-                    Rollbar.instance().error(e);
-                }
-            }
-        }).start();
-    }
+    public abstract void updateData();
 
     public abstract URoom[] getRooms();
 
     public abstract UDevice[] getDevices();
 
     public abstract UScene[] getScenes();
+
+    public String getName() {
+        return name;
+    }
+
+    public boolean isLoaded() {
+        return getVisibleRoomsCount() > 0 || getVisibleDevicesCount() > 0 || getVisibleScenesCount() > 0;
+    }
+
+    public boolean isEnabled() {
+        if (mainActivity == null)
+            return false;
+        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(mainActivity);
+        if (pref == null)
+            return false;
+        return pref.getBoolean(name.toLowerCase() + "_enabled", false);
+    }
 
     public UDevice getDevice(String deviceId) {
         for (UDevice d : getDevices())
@@ -188,9 +110,10 @@ public abstract class Controller {
     public int getVisibleDevicesCount() {
         int c = 0;
         if (getDevices() != null)
-            for (UDevice u : getDevices())
+            for (UDevice u : getDevices()) {
                 if (u.isVisible())
                     c++;
+            }
         return c;
     }
 
@@ -221,17 +144,19 @@ public abstract class Controller {
 
     public abstract void setMode(UDevice d, String mode);
 
+    public abstract void setTargetTemperature(UDevice d, String level);
+
     public abstract void runScene(UScene s);
 
     public String process(String[] requests, SharedPreferences pref) {
         UDevice[] devices = AI.getDevices(getDevices(), requests, pref);
         if (devices != null) {
-            mainActivity.show("Распознано: " + devices[0].ai_name);
+            mainActivity.show(mainActivity.getString(R.string.Recognized) + ": " + devices[0].getAiName());
             return processDevices(devices);
         }
         UScene[] scenes = AI.getScenes(getScenes(), requests, pref);
         if (scenes != null) {
-            mainActivity.show("Распознано: " + scenes[0].ai_name);
+            mainActivity.show(mainActivity.getString(R.string.Recognized) + ": " + scenes[0].ai_name);
             return processScenes(scenes);
         }
         return null;
@@ -243,11 +168,12 @@ public abstract class Controller {
         String text = mainActivity.getString(R.string.error);
         ArrayList<UDevice> list = new ArrayList<>();
         for (UDevice u : devices) {
-            Log.w(TAG, "найдено: " + u.getId() + " " + u.ai_name);
+            Log.d(TAG, mainActivity.getString(R.string.Recognized) + ": " + u.getId() + " " + u.getAiName());
             if (u.getCapabilities() != null) {
                 String onoff = u.getCapabilities().get(Capability.onoff);
                 String openclose = u.getCapabilities().get(Capability.openclose);
                 String windowcoverings_state = u.getCapabilities().get(Capability.windowcoverings_state);
+                Log.d(TAG, "onoff: " + onoff);
                 if (u.ai_flag == 3) {
                     setDimLevel(u, u.ai_value);
                     u.getCapabilities().put(Capability.dim, u.ai_value);
@@ -256,7 +182,7 @@ public abstract class Controller {
                     list.add(u);
                     if (!finded) {
                         finded = true;
-                        enabled = u.ai_flag == 1 || u.ai_flag == 0 && ("0".equals(onoff) || "open".equals(openclose) || "up".equals(windowcoverings_state));
+                        enabled = u.ai_flag == 1 || u.ai_flag == 0 && (onoff == null || onoff.isEmpty() || "0".equals(onoff) || "open".equals(openclose) || "up".equals(windowcoverings_state));
                     }
                 } else {
                     String measure_temperature = u.getCapabilities().get(Capability.measure_temperature);
@@ -277,9 +203,12 @@ public abstract class Controller {
                     String measure_noise = u.getCapabilities().get(Capability.measure_noise);
                     if (measure_noise != null)
                         return measure_noise;
+                    String measure_generic = u.getCapabilities().get(Capability.measure_generic);
+                    if (measure_generic != null)
+                        return measure_generic;
                 }
             } else
-                Log.w(TAG, "u.getCapabilities() == null: " + u.getId() + u.ai_name);
+                Log.w(TAG, "u.getCapabilities() == null: " + u.getId() + u.getAiName());
         }
 
         for (UDevice u : list) {

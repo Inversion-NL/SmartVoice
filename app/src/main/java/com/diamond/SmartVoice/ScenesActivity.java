@@ -12,8 +12,6 @@ import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 
 import com.diamond.SmartVoice.Controllers.Controller;
-import com.diamond.SmartVoice.Controllers.UDevice;
-import com.diamond.SmartVoice.Controllers.URoom;
 import com.diamond.SmartVoice.Controllers.UScene;
 
 import java.util.Timer;
@@ -37,18 +35,17 @@ public class ScenesActivity extends PreferenceActivity {
 
     private void reload() {
         getPreferenceScreen().removeAll();
-        if (mainActivity.HomeyController != null) list("Homey", mainActivity.HomeyController);
-        if (mainActivity.FibaroController != null) list("Fibaro", mainActivity.FibaroController);
-        if (mainActivity.VeraController != null) list("Vera", mainActivity.VeraController);
-        if (mainActivity.ZipatoController != null) list("Zipato", mainActivity.ZipatoController);
+        for (Controller controller : MainActivity.controllers)
+            if (controller.getVisibleScenesCount() > 0)
+                list(controller);
     }
 
-    private void list(String controllerName, Controller controller) {
+    private void list(Controller controller) {
         PreferenceScreen sceneList = getPreferenceScreen();
         Context context = sceneList.getContext();
 
         PreferenceCategory controllerCat = new PreferenceCategory(sceneList.getContext());
-        controllerCat.setTitle(controllerName);
+        controllerCat.setTitle(controller.getName());
         sceneList.addPreference(controllerCat);
 
         if (controller.getVisibleScenesCount() > 0) {
@@ -81,7 +78,7 @@ public class ScenesActivity extends PreferenceActivity {
                     scene.addPreference(pref);
 
                     pref = new Preference(context);
-                    pref.setTitle(getString(R.string.OriginalName));
+                    pref.setTitle(getString(R.string.DeviceName));
                     pref.setSummary(s.getName());
                     scene.addPreference(pref);
 

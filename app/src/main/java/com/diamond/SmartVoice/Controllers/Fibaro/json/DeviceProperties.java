@@ -163,7 +163,7 @@ public class DeviceProperties {
     private String zwaveRegion;
 
     @SerializedName("zwaveVersion")
-    private double zwaveVersion;
+    private String zwaveVersion;
 
     public String getBatteryLevel() {
         return batteryLevel;
@@ -181,12 +181,20 @@ public class DeviceProperties {
         return energy;
     }
 
+    public String getMode() {
+        return mode;
+    }
+
     public String getPower() {
         return power;
     }
 
     public String getTargetLevel() {
         return targetLevel;
+    }
+
+    public String getSupportedModes() {
+        return supportedModes;
     }
 
     public String getSaveLogs() {

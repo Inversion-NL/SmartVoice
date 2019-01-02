@@ -1,10 +1,12 @@
 package com.diamond.SmartVoice.Controllers.Vera;
 
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import com.diamond.SmartVoice.AI;
 import com.diamond.SmartVoice.Controllers.Capability;
 import com.diamond.SmartVoice.Controllers.Controller;
+import com.diamond.SmartVoice.Controllers.HttpController;
 import com.diamond.SmartVoice.Controllers.UDevice;
 import com.diamond.SmartVoice.Controllers.URoom;
 import com.diamond.SmartVoice.Controllers.UScene;
@@ -16,13 +18,12 @@ import com.diamond.SmartVoice.MainActivity;
 import com.google.gson.Gson;
 import com.rollbar.android.Rollbar;
 
-import java.io.IOException;
 import java.util.Locale;
 
 /**
  * @author Dmitriy Ponomarev
  */
-public class Vera extends Controller {
+public class Vera extends HttpController {
     private static final String TAG = Vera.class.getSimpleName();
 
     private Room[] all_rooms;
@@ -30,16 +31,36 @@ public class Vera extends Controller {
     private Scene[] all_scenes;
 
     public Vera(MainActivity activity) {
+        name = "Vera";
         mainActivity = activity;
-        host = activity.pref.getString("vera_server_ip", "");
-        if (!host.contains(":"))
-            host += ":3480";
         clearNames = true; // TODO config
         gson = new Gson();
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences pref, String key) {
+        if (key.equals("vera_enabled") && pref.getBoolean(key, false) && (!pref.getString("vera_server_ip", "").isEmpty() || !pref.getString("vera_server_ip_ext", "").isEmpty()))
+            loadData();
+    }
+
+    @Override
+    public void loadData()
+    {
+        host = mainActivity.pref.getString("vera_server_ip", "");
+        if (!host.replaceAll("http://", "").replaceAll("https://", "").contains(":"))
+            host += ":3480";
+        host_ext = mainActivity.pref.getString("vera_server_ip_ext", "");
+        // TODO авторизация и работа через облако, пример: https://github.com/cybermaggedon/pyvera/blob/master/vera3.py
+        // https://home.getvera.com/api/users/action_login
+        //"login_id" : login_id,
+        //"login_pass" : login_pass
         updateData();
     }
 
-    private void updateData() {
+    public void updateData() {
+        Room[] loaded_rooms = null;
+        Device[] loaded_devices = null;
+        Scene[] loaded_scenes = null;
         String result = request("/data_request?id=sdata&output_format=json", null);
         Sdata data = null;
         try {
@@ -50,26 +71,26 @@ public class Vera extends Controller {
         }
         if (data != null)
             try {
-                all_rooms = new Room[data.getRooms().size()];
-                all_devices = new Device[data.getDevices().size()];
-                all_scenes = new Scene[data.getScenes().size()];
+                loaded_rooms = new Room[data.getRooms().size()];
+                loaded_devices = new Device[data.getDevices().size()];
+                loaded_scenes = new Scene[data.getScenes().size()];
 
                 int i = 0;
                 for (Room r : data.getRooms())
-                    all_rooms[i++] = r;
+                    loaded_rooms[i++] = r;
 
                 if (clearNames)
-                    for (Room r : all_rooms)
+                    for (Room r : loaded_rooms)
                         r.setName(AI.replaceTrash(r.getName()));
 
                 i = 0;
                 for (Device d : data.getDevices()) {
-                    all_devices[i++] = d;
+                    loaded_devices[i++] = d;
                     d.ai_name = d.getName();
                     if (clearNames)
                         d.ai_name = AI.replaceTrash(d.ai_name);
 
-                    for (Room r : all_rooms)
+                    for (Room r : loaded_rooms)
                         if (r.getId().equals(d.getRoomID()))
                             d.setRoomName(r.getName());
 
@@ -101,6 +122,14 @@ public class Vera extends Controller {
                             case LightSensor:
                                 d.addCapability(Capability.measure_light, d.getLight());
                                 break;
+                            case HVAC:
+                                d.addCapability(Capability.measure_temperature, d.getTemperature());
+                                d.addCapability(Capability.target_temperature, d.getValue());
+                                //Subcategory
+                                //1	HVAC
+                                //2	Heater
+                                //3	Custom HVAC
+                                break;
                         }
                         if (d.getBatterylevel() != null)
                             d.addCapability(Capability.measure_battery, d.getBatterylevel());
@@ -117,11 +146,11 @@ public class Vera extends Controller {
                 i = 0;
                 for (Scene s : data.getScenes())
                     if (s.isVisible()) {
-                        all_scenes[i++] = s;
+                        loaded_scenes[i++] = s;
                         s.ai_name = s.getName();
                         if (clearNames)
                             s.ai_name = AI.replaceTrash(s.ai_name);
-                        for (Room r : all_rooms)
+                        for (Room r : loaded_rooms)
                             if (r.getId().equals(s.getRoomID()))
                                 s.setRoomName(r.getName());
                     }
@@ -130,14 +159,21 @@ public class Vera extends Controller {
                 Rollbar.instance().error(e);
             }
 
-        if (all_rooms == null)
+        if (loaded_rooms == null && all_rooms == null)
             all_rooms = new Room[0];
-        if (all_devices == null)
-            all_devices = new Device[0];
-        if (all_scenes == null)
-            all_scenes = new Scene[0];
-    }
+        else if (loaded_rooms != null)
+            all_rooms = loaded_rooms;
 
+        if (loaded_devices == null && all_devices == null)
+            all_devices = new Device[0];
+        else if (loaded_devices != null)
+            all_devices = loaded_devices;
+
+        if (loaded_scenes == null && all_scenes == null)
+            all_scenes = new Scene[0];
+        else if (loaded_scenes != null)
+            all_scenes = loaded_scenes;
+    }
 
     @Override
     public URoom[] getRooms() {
@@ -195,13 +231,41 @@ public class Vera extends Controller {
         // TODO
     }
 
+    private String lastMode = "Off"; // TODO запоминать в устройстве режим
+
     @Override
     public void setMode(UDevice d, String mode) {
-        // TODO
+        lastMode = mode;
+        sendCommand("/data_request?id=action&DeviceNum=" + d.getId() + "urn:upnp-org:serviceId:HVAC_UserOperatingMode1&action=SetModeTarget&NewModeTarget=" + getThermostatMode(mode));
+    }
+
+    @Override
+    public void setTargetTemperature(UDevice d, String level)
+    {
+        String service = lastMode.equals("Cool") ? "urn:upnp-org:serviceId:TemperatureSetpoint1_Cool" : "urn:upnp-org:serviceId:TemperatureSetpoint1_Heat";
+        sendCommand("/data_request?id=action&DeviceNum=" + d.getId() + service + "&action=SetCurrentSetpoint&NewCurrentSetpoint=" + level);
     }
 
     @Override
     public void runScene(UScene s) {
         sendCommand("/data_request?id=action&SceneNum=" + s.getId() + "&serviceId=urn:micasaverde-com:serviceId:HomeAutomationGateway1&action=RunScene");
+    }
+
+    public String getThermostatMode(String mode)
+    {
+        switch(mode)
+        {
+            case "Auto":
+                return "AutoChangeOver";
+            case "Heat":
+            case "On":
+                return "HeatOn";
+            case "Cool":
+                return "CoolOn";
+            case "Off":
+                return "Off";
+            default:
+                return "Off";
+        }
     }
 }

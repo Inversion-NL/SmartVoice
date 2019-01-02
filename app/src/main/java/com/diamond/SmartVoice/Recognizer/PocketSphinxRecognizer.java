@@ -1,18 +1,12 @@
 package com.diamond.SmartVoice.Recognizer;
 
 import android.util.Log;
-import android.widget.Toast;
 
 import com.diamond.SmartVoice.MainActivity;
 import com.diamond.SmartVoice.Utils;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.Charset;
 
-import edu.cmu.pocketsphinx.Assets;
 import edu.cmu.pocketsphinx.Hypothesis;
 import edu.cmu.pocketsphinx.SpeechRecognizerSetup;
 
@@ -38,7 +32,7 @@ public class PocketSphinxRecognizer extends AbstractRecognizer {
             SpeechRecognizerSetup setup = defaultSetup();
             setup.setAcousticModel(new File(Utils.assetDir, "dict"));
             setup.setDictionary(dict);
-            setup.setKeywordThreshold(Float.valueOf("1e-" + (100-Integer.parseInt(context.pref.getString("PocketSphinxSensitivity", "95"))) + "f"));
+            setup.setKeywordThreshold(Float.valueOf("1e-" + (100 - Integer.parseInt(context.pref.getString("PocketSphinxSensitivity", "95"))) + "f"));
             //setup.setBoolean("-remove_noise", false);
             recognizer = setup.getRecognizer();
             recognizer.addListener(new PocketSphinxRecognitionListener());
